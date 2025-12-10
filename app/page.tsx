@@ -200,6 +200,9 @@ const embedUrl = (url?: string) => {
 
 const ScoreBanner = ({ meta }: { meta?: ApiMatchMetadata | null }) => {
   if (!meta) return null;
+  
+  // Only show if there's a valid score
+  if (!meta.score || meta.score === "–" || meta.score.trim() === "") return null;
 
   const homeLogo = logoForTeam(meta.home_team);
   const awayLogo = logoForTeam(meta.away_team);
@@ -313,20 +316,21 @@ const getEventIcon = (event?: string) => {
 export default function Home() {
   const [query, setQuery] = useState("");
   const [includeHighlights, setIncludeHighlights] = useState(true);
+  const [emphasizeOrder, setEmphasizeOrder] = useState(true);
   const [apiData, setApiData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [thinking, setThinking] = useState<ThinkingEvent[]>([]);
   const [streamActive, setStreamActive] = useState(false);
-  const [es, setEs] = useState<EventSource | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const thinkingSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => {
-      if (es) es.close();
+      if (abortController) abortController.abort();
     };
-  }, [es]);
+  }, [abortController]);
 
   const thinkingScrollRef = useRef<HTMLDivElement>(null);
 
@@ -336,11 +340,11 @@ export default function Home() {
     }
   }, [thinking]);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (es) {
-      es.close();
-      setEs(null);
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
     }
     setLoading(true);
     setStreamActive(true);
@@ -353,59 +357,102 @@ export default function Home() {
       thinkingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 100);
 
-    const encodedQuery = encodeURIComponent(query.trim());
-    const include = includeHighlights ? "true" : "false";
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const url = `${baseUrl}/query/stream?query=${encodedQuery}&include_highlights=${include}`;
+    const url = `${baseUrl}/query/stream`;
+    const controller = new AbortController();
+    setAbortController(controller);
 
     try {
-      const source = new EventSource(url);
-      setEs(source);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: query.trim(),
+          include_highlights: includeHighlights,
+          emphasize_order: emphasizeOrder,
+          gender: "men",
+        }),
+        signal: controller.signal,
+      });
 
-      source.onmessage = (evt) => {
-        if (!evt.data) return;
-        try {
-          const parsed = JSON.parse(evt.data);
-          const stageLike = parsed.stage || parsed?.data?.stage;
-          const statusLike = parsed.status || parsed?.data?.status;
-          const messageLike = parsed.message || parsed?.data?.message;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-          if (parsed.type === "result") {
-            const data = normalizeResponse(parsed.data);
-            if (data.success === false) {
-              // Explicit error handling
-              setApiData({ ...data, error: data.error || "The API returned an unsuccessful response." });
-            } else {
-              setApiData(data);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      if (!reader) {
+        throw new Error("No response body");
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          // Process any remaining buffer
+          if (buffer.trim()) {
+            const lines = buffer.split("\n");
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                processSSELine(line.slice(6));
+              }
             }
-          } else if (parsed.type === "thinking" || stageLike) {
-            setThinking((prev) =>
-              [
-                ...prev,
-                {
-                  stage: stageLike || "thinking",
-                  message: messageLike || "",
-                  status: statusLike || "info",
-                },
-              ].slice(-12),
-            );
           }
-        } catch {
-          // ignore malformed
+          break;
         }
-      };
 
-      source.onerror = () => {
-        setError("No live updates available. Try another query.");
-        source.close();
-        setEs(null);
-        setStreamActive(false);
-        setLoading(false);
-      };
-    } catch (err) {
-      setError("No live updates available. Try another query.");
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            processSSELine(line.slice(6));
+          }
+        }
+      }
+
       setStreamActive(false);
       setLoading(false);
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setError("No live updates available. Try another query.");
+      }
+      setStreamActive(false);
+      setLoading(false);
+    }
+
+    function processSSELine(data: string) {
+      if (data === "[DONE]" || !data.trim()) return;
+      try {
+        const parsed = JSON.parse(data);
+        const stageLike = parsed.stage || parsed?.data?.stage;
+        const statusLike = parsed.status || parsed?.data?.status;
+        const messageLike = parsed.message || parsed?.data?.message;
+
+        if (parsed.type === "result") {
+          const responseData = normalizeResponse(parsed.data);
+          if (responseData.success === false) {
+            setApiData({ ...responseData, error: responseData.error || "The API returned an unsuccessful response." });
+          } else {
+            setApiData(responseData);
+          }
+        } else if (parsed.type === "thinking" || stageLike) {
+          setThinking((prev) =>
+            [
+              ...prev,
+              {
+                stage: stageLike || "thinking",
+                message: messageLike || "",
+                status: statusLike || "info",
+              },
+            ].slice(-12),
+          );
+        }
+      } catch {
+        // ignore malformed
+      }
     }
   };
 
@@ -452,15 +499,25 @@ export default function Home() {
         {/* Background Elements */}
         <div className="absolute left-1/2 top-1/2 -z-10 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/10 blur-[120px]" />
         <div className="absolute top-0 -z-10 h-full w-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150"></div>
+        
+        {/* Mo Salah Image - Background behind hero text */}
+        <div className="absolute left-1/2 top-1/2 -z-10 -translate-x-1/2 -translate-y-1/2 pointer-events-none w-full max-w-6xl">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/mosalah.png"
+            alt="Mo Salah"
+            className="h-[1000px] w-auto mx-auto object-contain opacity-[0.25]"
+          />
+        </div>
 
-        <div className="flex max-w-4xl flex-col items-center text-center">
+        <div className="relative z-10 flex max-w-4xl flex-col items-center text-center">
           <h1 className="font-serif text-5xl font-medium leading-tight tracking-tight text-white md:text-7xl">
             Your AI-Powered <br />
-            <span className="text-white/90">Soccer Match Analyst</span>
+            <span className="text-white/90">Soccer Analyst</span>
           </h1>
           
           <p className="mt-6 max-w-2xl text-lg text-white/60">
-            Ask about any match and get instant scores, highlights, tactical breakdowns, and comprehensive analysis — powered by AI.
+            Ask about matches, scores, team news, lineups, highlights, tactical breakdowns, and comprehensive analysis powered by AI.
           </p>
 
           <div id="query-input" className="mt-10 w-full max-w-xl scroll-mt-32">
@@ -471,7 +528,7 @@ export default function Home() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ask about a match, score, or tactic..."
+                placeholder="Ask about matches, team news, lineups, or tactics..."
                 className="flex-1 bg-transparent px-6 py-3 text-base text-white placeholder-white/40 outline-none"
                 required
               />
@@ -483,7 +540,7 @@ export default function Home() {
                 {loading ? "Getting Insights..." : "Get Insights"}
               </button>
             </form>
-            <div className="mt-4 flex items-center justify-center gap-2 text-xs text-white/40">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-xs text-white/40">
               <label className="flex cursor-pointer items-center gap-2 transition-colors hover:text-white/60">
                 <input
                   type="checkbox"
@@ -491,7 +548,19 @@ export default function Home() {
                   checked={includeHighlights}
                   onChange={(e) => setIncludeHighlights(e.target.checked)}
                 />
-                Include video highlights
+                Include highlights
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 transition-colors hover:text-white/60">
+                <button
+                  type="button"
+                  onClick={() => setEmphasizeOrder(!emphasizeOrder)}
+                  className={`relative h-5 w-9 rounded-full transition-colors ${emphasizeOrder ? "bg-indigo-500" : "bg-white/20"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${emphasizeOrder ? "translate-x-4" : "translate-x-0"}`}
+                  />
+                </button>
+                Preserve team order
               </label>
               {error && <span className="text-rose-400">• {error}</span>}
             </div>
@@ -605,7 +674,7 @@ export default function Home() {
             <div className="rounded-3xl border border-white/10 bg-[#0c0e14]/80 p-6 backdrop-blur-xl">
               <ScoreBanner meta={apiData?.match_metadata} />
 
-              <div className="mt-6 space-y-4">
+              <div className={`space-y-4 ${apiData?.match_metadata?.score ? "mt-6" : ""}`}>
                 <h3 className="text-lg font-medium text-white">Analysis</h3>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-inner">
                     <div className="text-white/90 leading-relaxed markdown-content">
