@@ -519,7 +519,7 @@ export default function Home() {
           </h1>
           
           <p className="mt-6 max-w-2xl text-lg text-white/60">
-            Ask about matches, scores, team news, lineups, highlights, tactical breakdowns, and comprehensive analysis powered by AI.
+            Ask about matches, scores, highlights, tactical breakdowns, and comprehensive analysis powered by AI.
           </p>
 
           <div id="query-input" className="mt-10 w-full max-w-xl scroll-mt-32">
