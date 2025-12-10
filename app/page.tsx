@@ -564,8 +564,19 @@ export default function Home() {
                 </button>
                 Preserve team order
               </label>
-              {error && <span className="text-rose-400">• {error}</span>}
+              {error && (
+                error.toLowerCase().includes('memory') ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5">
+                    <span className="text-amber-400 text-xs">⚠️ Memory usage exceeded. Try a simpler query.</span>
+                  </div>
+                ) : (
+                  <span className="text-rose-400">• {error}</span>
+                )
+              )}
             </div>
+            <p className="mt-3 text-center text-[10px] text-white/30">
+              AI may make mistakes. Please verify important information.
+            </p>
 
             {/* Compact Thinking Stream under Prompt - REMOVED since moving to Hero */}
           </div>
@@ -657,6 +668,12 @@ export default function Home() {
                     <span className="text-3xl">⚠️</span>
                   </div>
                   <h3 className="text-xl font-semibold text-white mb-2">Something unexpected happened</h3>
+                  {apiData.error && apiData.error.toLowerCase().includes('memory') ? (
+                    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 max-w-md">
+                      <p className="text-sm font-medium text-amber-400 mb-1">Memory Usage Exceeded</p>
+                      <p className="text-xs text-amber-300/80">The request exceeded available memory. Please try a simpler query or try again later.</p>
+                    </div>
+                  ) : null}
                   <p className="text-white/60 max-w-md mb-8">
                     {apiData.error || "We couldn't process your request completely. Please try asking your question differently or check back later."}
                   </p>
