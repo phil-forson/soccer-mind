@@ -325,8 +325,10 @@ export default function Home() {
   const [thinking, setThinking] = useState<ThinkingEvent[]>([]);
   const [streamActive, setStreamActive] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState<number>(0);
   const resultsRef = useRef<HTMLDivElement>(null);
   const thinkingSectionRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     return () => {
@@ -344,6 +346,11 @@ export default function Home() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const now = Date.now();
+    if (cooldownUntil && now < cooldownUntil) {
+      setError("Please wait a few seconds before trying again.");
+      return;
+    }
     if (abortController) {
       abortController.abort();
       setAbortController(null);
@@ -363,6 +370,9 @@ export default function Home() {
     const url = `${baseUrl}/query/stream`;
     const controller = new AbortController();
     setAbortController(controller);
+    const newCooldown = Date.now() + 6000;
+    setCooldownUntil(newCooldown);
+    setTimeout(() => setCooldownUntil(0), 6000);
 
     try {
       const response = await fetch(url, {
@@ -525,6 +535,7 @@ export default function Home() {
           <div id="query-input" className="mt-10 w-full max-w-xl scroll-mt-32">
             <form 
               onSubmit={handleSubmit}
+              ref={formRef}
               className="relative flex items-center rounded-full border border-white/10 bg-white/5 p-2 shadow-2xl backdrop-blur-sm transition-all focus-within:border-white/20 focus-within:bg-white/10"
             >
               <input
@@ -536,7 +547,12 @@ export default function Home() {
               />
               <button
                 type="submit"
-                disabled={loading || !query.trim()}
+                disabled={
+                  loading ||
+                  !query.trim() ||
+                  (cooldownUntil && Date.now() < cooldownUntil) ||
+                  streamActive
+                }
                 className="rounded-full bg-gradient-to-r from-[#a78bfa] to-[#818cf8] px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:shadow-indigo-500/40 disabled:opacity-70"
               >
                 {loading ? "Getting Insights..." : "Get Insights"}
@@ -693,6 +709,24 @@ export default function Home() {
             <div className="rounded-3xl border border-white/10 bg-[#0c0e14]/80 p-6 backdrop-blur-xl">
               <ScoreBanner meta={apiData?.match_metadata} />
 
+              {!apiData?.match_metadata?.score && !apiData?.match_metadata?.home_team && (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/80">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span>No match was detected. Try the same query again.</span>
+                    <button
+                      type="button"
+                      disabled={loading || streamActive}
+                      onClick={() => {
+                        if (!loading && !streamActive) formRef.current?.requestSubmit();
+                      }}
+                      className={`rounded-full border border-white/20 px-4 py-2 text-xs font-medium text-white transition-colors ${loading || streamActive ? "cursor-not-allowed opacity-60" : "hover:border-white/40 hover:bg-white/10"}`}
+                    >
+                      Retry with same query
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className={`space-y-4 ${apiData?.match_metadata?.score ? "mt-6" : ""}`}>
                 <h3 className="text-lg font-medium text-white">Analysis</h3>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-inner">
@@ -731,6 +765,19 @@ export default function Home() {
                             </div>
                         </div>
                     ) : null}
+                        <div className="mt-6 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-xs text-white/50">Not what you expected?</p>
+                          <button
+                            type="button"
+                            disabled={loading || streamActive}
+                            onClick={() => {
+                              if (!loading && !streamActive) formRef.current?.requestSubmit();
+                            }}
+                            className={`inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition-colors ${loading || streamActive ? "cursor-not-allowed opacity-60" : "hover:border-white/30 hover:bg-white/10"}`}
+                          >
+                            Try again with the same query
+                          </button>
+                        </div>
                 </div>
               </div>
 
