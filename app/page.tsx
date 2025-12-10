@@ -105,6 +105,8 @@ const LOGO_ALIASES: Record<string, string> = {
   "inter miami": "inter-miami",
   "inter miami cf": "inter-miami",
   "inter milan": "inter-milan",
+  "inter": "inter-milan",
+  "inter fc": "inter-milan",
   "fc internazionale": "inter-milan",
   "galatasaray": "galatasaray",
   "galatasaray fc": "galatasaray",
