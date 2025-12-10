@@ -765,19 +765,21 @@ export default function Home() {
                             </div>
                         </div>
                     ) : null}
-                        <div className="mt-6 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                          <p className="text-xs text-white/50">Not what you expected?</p>
-                          <button
-                            type="button"
-                            disabled={loading || streamActive}
-                            onClick={() => {
-                              if (!loading && !streamActive) formRef.current?.requestSubmit();
-                            }}
-                            className={`inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition-colors ${loading || streamActive ? "cursor-not-allowed opacity-60" : "hover:border-white/30 hover:bg-white/10"}`}
-                          >
-                            Try again with the same query
-                          </button>
-                        </div>
+                        {!loading && !streamActive && (
+                          <div className="mt-6 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-xs text-white/50">Not what you expected?</p>
+                            <button
+                              type="button"
+                              disabled={loading || streamActive}
+                              onClick={() => {
+                                if (!loading && !streamActive) formRef.current?.requestSubmit();
+                              }}
+                              className={`inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition-colors ${loading || streamActive ? "cursor-not-allowed opacity-60" : "hover:border-white/30 hover:bg-white/10"}`}
+                            >
+                              Try again with the same query
+                            </button>
+                          </div>
+                        )}
                 </div>
               </div>
 
