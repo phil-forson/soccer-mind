@@ -10,6 +10,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Soccer mind",
   description: "Soccer LLM Model",
+  icons: {
+    icon: "/logo.svg",
+  },
 };
 
 export default function RootLayout({
