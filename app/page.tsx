@@ -2,58 +2,9 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-
-type ApiHighlight = {
-  title?: string;
-  url?: string;
-  duration?: string;
-  source_type?: string | null;
-  is_nbc_sports?: boolean | null;
-  is_official_club?: boolean | null;
-  confidence?: number | null;
-};
-
-type ApiKeyMoment = {
-  minute?: string;
-  event?: string;
-  description?: string;
-  team?: string;
-  momentum_impact?: string;
-  reasoning?: string;
-};
-
-type ApiMatchMetadata = {
-  home_team?: string;
-  away_team?: string;
-  match_date?: string;
-  score?: string;
-  competition?: string;
-  key_moments?: ApiKeyMoment[];
-  man_of_the_match?: string;
-  match_summary?: string;
-};
-
-type ApiResponse = {
-  success?: boolean;
-  intent?: string | null;
-  summary?: string | null;
-  match_metadata?: ApiMatchMetadata | null;
-  highlights?: ApiHighlight[] | string[];
-  sources?: string[];
-  game_analysis?: {
-    deep_analysis?: string;
-    momentum_analysis?: ApiKeyMoment[];
-    tactical_analysis?: Record<string, unknown>;
-  } | null;
-  error?: string | null;
-  answer?: string | null;
-};
-
-type ThinkingEvent = {
-  stage: string;
-  message: string;
-  status: string;
-};
+import { useSoccerQuery } from "@/hooks/useSoccerQuery";
+import type { HighlightVideo, MatchMetadata, SourceCitation } from "@/lib/api/types";
+import { isMatchOrientedIntent, shouldShowScoreCard } from "@/lib/api/types";
 
 const LOGO_ALIASES: Record<string, string> = {
   "arsenal": "arsenal",
@@ -176,70 +127,74 @@ const logoForTeam = (name?: string) => {
   return `/logos/${slug}.png`;
 };
 
-const normalizeResponse = (data: any): ApiResponse => ({
-  ...data,
-  summary: data?.summary ?? data?.answer ?? null,
-  highlights: Array.isArray(data?.highlights) ? data.highlights : [],
-  sources: Array.isArray(data?.sources) ? data.sources : [],
-});
-
-const embedUrl = (url?: string) => {
+const httpsHref = (url?: string | null): string | null => {
   if (!url) return null;
   try {
-    if (url.includes("youtube.com/watch?v=")) {
-      const videoId = new URL(url).searchParams.get("v");
-      return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=0` : url;
-    }
-    if (url.includes("youtu.be/")) {
-      const id = url.split("youtu.be/")[1]?.split("?")[0];
-      return id ? `https://www.youtube.com/embed/${id}?autoplay=0` : url;
-    }
-    return url;
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed.href : null;
   } catch {
-    return url;
+    return null;
   }
 };
 
-const ScoreBanner = ({ meta }: { meta?: ApiMatchMetadata | null }) => {
-  if (!meta) return null;
-  
-  // Only show if there's a valid score
-  if (!meta.score || meta.score === "–" || meta.score.trim() === "") return null;
+const youtubeEmbedUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return null;
+    const host = parsed.hostname.replace(/^www\./, "");
+    if (host === "youtube.com" || host === "youtube-nocookie.com") {
+      if (parsed.pathname === "/watch") {
+        const videoId = parsed.searchParams.get("v");
+        return videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : null;
+      }
+      if (parsed.pathname.startsWith("/embed/")) {
+        return `https://www.youtube-nocookie.com${parsed.pathname}`;
+      }
+    }
+    if (host === "youtu.be") {
+      const id = parsed.pathname.replace(/^\//, "").split("/")[0];
+      return id ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
 
-  const homeLogo = logoForTeam(meta.home_team);
-  const awayLogo = logoForTeam(meta.away_team);
-  const scoreText = meta.score || "–";
-  const [homeScore, awayScore] = scoreText.split("-").map((s) => s.trim());
-  const goals =
-    meta.key_moments?.filter((m) => (m.event || "").toUpperCase() === "GOAL") || [];
+const ScoreBanner = ({ meta }: { meta?: MatchMetadata | null }) => {
+  if (!shouldShowScoreCard(meta) || !meta) return null;
 
-  const homeGoals = goals.filter(g => g.team === 'home');
-  const awayGoals = goals.filter(g => g.team === 'away');
+  const homeLogo = logoForTeam(meta.home_team ?? undefined);
+  const awayLogo = logoForTeam(meta.away_team ?? undefined);
+  const scoreText = meta.score?.trim() ?? "";
+  const [homeScore, awayScore] = scoreText.includes("-")
+    ? scoreText.split("-").map((s) => s.trim())
+    : [null, null];
+  const scheduled = meta.evidence_status === "scheduled";
+  const goals = meta.key_moments.filter((m) => m.event.toUpperCase() === "GOAL");
+  const homeGoals = goals.filter((g) => g.team === "home");
+  const awayGoals = goals.filter((g) => g.team === "away");
 
   return (
     <div className="w-full overflow-hidden rounded-3xl border border-white/10 bg-[#121212] shadow-2xl">
-      {/* Header Info */}
       <div className="flex items-center justify-between bg-[#1a1a1a] px-6 py-3 text-xs font-medium text-white/60">
         <div className="flex items-center gap-2">
           <span className="text-lg">⚽</span>
-          <span>{meta.competition || "Soccer Match"}</span>
+          {meta.competition ? <span>{meta.competition}</span> : null}
         </div>
         <div className="flex items-center gap-4">
-           <span>{meta.match_date || "Today"}</span>
-           <span className="hidden sm:inline">•</span>
-           <span className="hidden sm:inline">Full Time</span>
+          {meta.match_date ? <span>{meta.match_date}</span> : null}
         </div>
       </div>
 
-      {/* Teams & Score */}
       <div className="relative flex flex-col items-center justify-center gap-8 px-6 py-8 sm:flex-row sm:gap-16">
-        {/* Home Team */}
         <div className="flex flex-col items-center gap-3 text-center flex-1">
           {homeLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={homeLogo}
-              alt={meta.home_team || "Home"}
+              alt={meta.home_team ?? "Home"}
               className="h-20 w-20 object-contain"
             />
           ) : (
@@ -248,34 +203,35 @@ const ScoreBanner = ({ meta }: { meta?: ApiMatchMetadata | null }) => {
             </div>
           )}
           <div className="space-y-1">
-             <p className="text-lg font-bold text-white">{meta.home_team || "Home Team"}</p>
+             {meta.home_team ? <p className="text-lg font-bold text-white">{meta.home_team}</p> : null}
              <div className="text-xs text-white/50 space-y-0.5">
                 {homeGoals.map((g, i) => (
-                    <p key={i}>{g.description?.split(' ')[0] || 'Goal'} {g.minute}'</p>
+                    <p key={i}>{g.minute ? `${g.minute}' ` : ""}{g.description}</p>
                 ))}
              </div>
           </div>
         </div>
 
-        {/* Score Center */}
         <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center gap-4 text-5xl font-bold text-white tracking-tighter">
-            <span>{homeScore || "0"}</span>
-            <span className="text-white/20">-</span>
-            <span>{awayScore || "0"}</span>
-          </div>
-          <div className="rounded-full bg-white/5 px-3 py-1 text-[10px] font-medium uppercase tracking-widest text-white/40">
-            Full Time
-          </div>
+          {scheduled ? (
+            <div className="text-sm font-medium uppercase tracking-widest text-white/50">
+              Scheduled
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 text-5xl font-bold text-white tracking-tighter">
+              <span>{homeScore}</span>
+              <span className="text-white/20">-</span>
+              <span>{awayScore}</span>
+            </div>
+          )}
         </div>
 
-        {/* Away Team */}
         <div className="flex flex-col items-center gap-3 text-center flex-1">
           {awayLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={awayLogo}
-              alt={meta.away_team || "Away"}
+              alt={meta.away_team ?? "Away"}
               className="h-20 w-20 object-contain"
             />
           ) : (
@@ -284,57 +240,39 @@ const ScoreBanner = ({ meta }: { meta?: ApiMatchMetadata | null }) => {
             </div>
           )}
           <div className="space-y-1">
-             <p className="text-lg font-bold text-white">{meta.away_team || "Away Team"}</p>
+             {meta.away_team ? <p className="text-lg font-bold text-white">{meta.away_team}</p> : null}
              <div className="text-xs text-white/50 space-y-0.5">
                 {awayGoals.map((g, i) => (
-                    <p key={i}>{g.description?.split(' ')[0] || 'Goal'} {g.minute}'</p>
+                    <p key={i}>{g.minute ? `${g.minute}' ` : ""}{g.description}</p>
                 ))}
              </div>
           </div>
         </div>
       </div>
-
     </div>
   );
-};
-
-const cleanText = (text: string) => {
-  // Remove "📚 Sources: ..." or "Sources: ..." lines with URLs (and everything after)
-  return text
-    .replace(/📚?\s*(?:Sources?|References?)(?:\s*:)?\s*[•\-\s]*(?:https?:\/\/[\s\S]*)/gi, "")
-    .trim();
-};
-
-const getEventIcon = (event?: string) => {
-  const e = event?.toLowerCase() || "";
-  if (e.includes("goal")) return "⚽";
-  if (e.includes("red_card") || e.includes("red card")) return "🟥";
-  if (e.includes("yellow_card") || e.includes("yellow card")) return "🟨";
-  if (e.includes("substitution") || e.includes("sub")) return "🔄";
-  if (e.includes("whistle")) return "🏁";
-  return "•";
 };
 
 export default function Home() {
   const [query, setQuery] = useState("");
   const [includeHighlights, setIncludeHighlights] = useState(true);
   const [emphasizeOrder, setEmphasizeOrder] = useState(true);
-  const [apiData, setApiData] = useState<ApiResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [thinking, setThinking] = useState<ThinkingEvent[]>([]);
-  const [streamActive, setStreamActive] = useState(false);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const [cooldownUntil, setCooldownUntil] = useState<number>(0);
+  const [onCooldown, setOnCooldown] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const {
+    result: apiData,
+    thinking,
+    error: queryError,
+    loading,
+    streamActive,
+    requestId,
+    runQuery,
+    reset,
+  } = useSoccerQuery();
+  const error = formError ?? queryError;
   const resultsRef = useRef<HTMLDivElement>(null);
   const thinkingSectionRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-
-  useEffect(() => {
-    return () => {
-      if (abortController) abortController.abort();
-    };
-  }, [abortController]);
 
   const thinkingScrollRef = useRef<HTMLDivElement>(null);
 
@@ -346,142 +284,31 @@ export default function Home() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const now = Date.now();
-    if (cooldownUntil && now < cooldownUntil) {
-      setError("Please wait a few seconds before trying again.");
+    if (onCooldown) {
+      setFormError("Please wait a few seconds before trying again.");
       return;
     }
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-    }
-    setLoading(true);
-    setStreamActive(true);
-    setError(null);
-    setApiData(null);
-    setThinking([]);
+    setFormError(null);
 
-    // Scroll to results after a slight delay to let UI update
     setTimeout(() => {
       thinkingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 100);
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const url = `${baseUrl}/query/stream`;
-    const controller = new AbortController();
-    setAbortController(controller);
-    const newCooldown = Date.now() + 6000;
-    setCooldownUntil(newCooldown);
-    setTimeout(() => setCooldownUntil(0), 6000);
+    setOnCooldown(true);
+    setTimeout(() => setOnCooldown(false), 6000);
 
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: query.trim(),
-          include_highlights: includeHighlights,
-          emphasize_order: emphasizeOrder,
-          gender: "men",
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      if (!reader) {
-        throw new Error("No response body");
-      }
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          // Process any remaining buffer
-          if (buffer.trim()) {
-            const lines = buffer.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                processSSELine(line.slice(6));
-              }
-            }
-          }
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            processSSELine(line.slice(6));
-          }
-        }
-      }
-
-      setStreamActive(false);
-      setLoading(false);
-    } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        setError("No live updates available. Try another query.");
-      }
-      setStreamActive(false);
-      setLoading(false);
-    }
-
-    function processSSELine(data: string) {
-      if (data === "[DONE]" || !data.trim()) return;
-      try {
-        const parsed = JSON.parse(data);
-        const stageLike = parsed.stage || parsed?.data?.stage;
-        const statusLike = parsed.status || parsed?.data?.status;
-        const messageLike = parsed.message || parsed?.data?.message;
-
-        if (parsed.type === "result") {
-          const responseData = normalizeResponse(parsed.data);
-          if (responseData.success === false) {
-            setApiData({ ...responseData, error: responseData.error || "The API returned an unsuccessful response." });
-          } else {
-            setApiData(responseData);
-          }
-        } else if (parsed.type === "thinking" || stageLike) {
-          setThinking((prev) =>
-            [
-              ...prev,
-              {
-                stage: stageLike || "thinking",
-                message: messageLike || "",
-                status: statusLike || "info",
-              },
-            ].slice(-12),
-          );
-        }
-      } catch {
-        // ignore malformed
-      }
-    }
+    await runQuery({
+      query: query.trim(),
+      include_highlights: includeHighlights,
+      emphasize_order: emphasizeOrder,
+      gender: "men",
+    });
   };
 
-  const keyMoments = useMemo(
-    () => apiData?.match_metadata?.key_moments ?? [],
+  const highlightCards: HighlightVideo[] = useMemo(
+    () => apiData?.highlights ?? [],
     [apiData],
   );
-
-  const highlightCards: ApiHighlight[] = useMemo(() => {
-    if (!apiData?.highlights) return [];
-    if (Array.isArray(apiData.highlights)) {
-      return apiData.highlights.map((h) =>
-        typeof h === "string" ? { title: h } : h,
-      );
-    }
-    return [];
-  }, [apiData]);
 
   const primaryHighlight = useMemo(() => {
     return highlightCards.find((h) => h.url) || null;
@@ -499,7 +326,7 @@ export default function Home() {
         </div>
         <nav className="hidden items-center gap-8 text-sm font-medium text-white/60 md:flex">
           <a href="#" className="text-white">Home</a>
-          <a href="https://www.phil.chat" target="_blank" className="hover:text-white transition-colors">Contact</a>
+          <a href="https://www.phil.chat" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Contact</a>
         </nav>
         <a href="#query-input" className="rounded-full bg-white/10 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-white/20">
           Get Started
@@ -550,7 +377,7 @@ export default function Home() {
                 disabled={
                   loading ||
                   !query.trim() ||
-                  (cooldownUntil && Date.now() < cooldownUntil) ||
+                  onCooldown ||
                   streamActive
                 }
                 className="rounded-full bg-gradient-to-r from-[#a78bfa] to-[#818cf8] px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:shadow-indigo-500/40 disabled:opacity-70"
@@ -678,25 +505,21 @@ export default function Home() {
         {/* Results Section - appears below or when needed */}
         <div ref={resultsRef} className="mt-24 w-full max-w-6xl scroll-mt-24">
           {(streamActive || apiData || thinking.length > 0) && (
-            apiData?.success === false ? (
+            apiData?.success === false && apiData.error !== "no_match_found" ? (
                <div className="flex flex-col items-center justify-center rounded-3xl border border-white/10 bg-[#0c0e14]/80 p-12 text-center backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10 mb-6">
                     <span className="text-3xl">⚠️</span>
                   </div>
                   <h3 className="text-xl font-semibold text-white mb-2">Something unexpected happened</h3>
-                  {apiData.error && apiData.error.toLowerCase().includes('memory') ? (
-                    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 max-w-md">
-                      <p className="text-sm font-medium text-amber-400 mb-1">Memory Usage Exceeded</p>
-                      <p className="text-xs text-amber-300/80">The request exceeded available memory. Please try a simpler query or try again later.</p>
-                    </div>
-                  ) : null}
                   <p className="text-white/60 max-w-md mb-8">
-                    {apiData.error || "We couldn't process your request completely. Please try asking your question differently or check back later."}
+                    {error || apiData.summary || "We couldn't process your request completely. Please try asking your question differently or check back later."}
                   </p>
+                  {requestId ? (
+                    <p className="mb-6 text-[10px] text-white/40">Request {requestId}</p>
+                  ) : null}
                   <button
                     onClick={() => {
-                       setApiData(null);
-                       setThinking([]);
+                       reset();
                        setQuery("");
                        window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
@@ -709,31 +532,34 @@ export default function Home() {
             <div className="rounded-3xl border border-white/10 bg-[#0c0e14]/80 p-6 backdrop-blur-xl">
               <ScoreBanner meta={apiData?.match_metadata} />
 
-              {!apiData?.match_metadata?.score && !apiData?.match_metadata?.home_team && (
+              {apiData &&
+                isMatchOrientedIntent(apiData.intent) &&
+                (apiData.error === "no_match_found" ||
+                  apiData.match_metadata?.no_match_found ||
+                  apiData.match_metadata?.evidence_status === "insufficient" ||
+                  apiData.match_metadata?.evidence_status === "conflicting") && (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/80">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <span>No match was detected. Try the same query again.</span>
-                    <button
-                      type="button"
-                      disabled={loading || streamActive}
-                      onClick={() => {
-                        if (!loading && !streamActive) formRef.current?.requestSubmit();
-                      }}
-                      className={`rounded-full border border-white/20 px-4 py-2 text-xs font-medium text-white transition-colors ${loading || streamActive ? "cursor-not-allowed opacity-60" : "hover:border-white/40 hover:bg-white/10"}`}
-                    >
-                      Retry with same query
-                    </button>
-                  </div>
+                  {apiData.match_metadata?.evidence_status === "conflicting"
+                    ? "Sources disagree on this match. The API could not verify a single result."
+                    : apiData.match_metadata?.evidence_status === "insufficient"
+                      ? "There is not enough verified evidence for a match result."
+                      : "No verified match was found for that query."}
+                  {requestId ? (
+                    <p className="mt-2 text-[10px] text-white/40">Request {requestId}</p>
+                  ) : null}
                 </div>
               )}
 
               <div className={`space-y-4 ${apiData?.match_metadata?.score ? "mt-6" : ""}`}>
                 <h3 className="text-lg font-medium text-white">Analysis</h3>
+                {requestId ? (
+                  <p className="text-[10px] text-white/30">Request {requestId}</p>
+                ) : null}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-inner">
                     <div className="text-white/90 leading-relaxed markdown-content">
                         {apiData?.summary ? (
                             <ReactMarkdown>
-                                {cleanText(apiData.summary)}
+                                {apiData.summary}
                             </ReactMarkdown>
                         ) : (
                             loading ? "Generating comprehensive analysis..." : "Analysis will appear here."
@@ -743,22 +569,34 @@ export default function Home() {
                     {apiData?.sources?.length ? (
                         <div className="mt-6 border-t border-white/10 pt-4">
                             <div className="flex flex-wrap gap-2">
-                            {apiData.sources.map((src, i) => {
-                                const hostname = new URL(src).hostname;
+                            {apiData.sources.map((src: SourceCitation) => {
+                                const href = httpsHref(src.url);
+                                if (!href) return null;
+                                const label = src.title || src.domain || src.url;
+                                const faviconHost = src.domain || (() => {
+                                  try {
+                                    return new URL(href).hostname;
+                                  } catch {
+                                    return null;
+                                  }
+                                })();
                                 return (
                                 <a
-                                    key={i}
-                                    href={src}
-            target="_blank"
+                                    key={src.id}
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 hover:border-white/20 transition-all"
                                 >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img 
-                                    src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=32`} 
-                                    alt="" 
+                                    {faviconHost ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                    src={`https://www.google.com/s2/favicons?domain=${faviconHost}&sz=32`}
+                                    alt=""
                                     className="h-4 w-4 rounded-sm opacity-80"
                                     />
-                                    <span>{hostname.replace('www.', '')}</span>
+                                    ) : null}
+                                    <span>{label}</span>
                                 </a>
                                 );
                             })}
@@ -783,33 +621,44 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Highlights - Full Width */}
+              {highlightCards.length > 0 ? (
               <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-5">
                 <h4 className="mb-4 text-sm font-medium uppercase tracking-wider text-white/60">Highlights</h4>
-                {primaryHighlight && embedUrl(primaryHighlight.url) ? (
+                {primaryHighlight && youtubeEmbedUrl(primaryHighlight.url) ? (
                   <div className="overflow-hidden rounded-xl border border-white/10 bg-black">
                     <iframe
-                      src={embedUrl(primaryHighlight.url) || undefined}
+                      title={primaryHighlight.title}
+                      src={youtubeEmbedUrl(primaryHighlight.url) ?? undefined}
                       className="aspect-video w-full"
                       allowFullScreen
                     />
                   </div>
-                ) : (
-                  <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/5">
-                    <p className="text-xs text-white/30">Highlights will appear here</p>
-                  </div>
-                )}
+                ) : primaryHighlight && httpsHref(primaryHighlight.url) ? (
+                  <a
+                    href={httpsHref(primaryHighlight.url) ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-indigo-400 hover:underline"
+                  >
+                    {primaryHighlight.title}
+                  </a>
+                ) : null}
                 
-                {highlightCards.length > 1 &&  (
+                {highlightCards.length > 1 && (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {highlightCards.slice(1).map((h, i) => (
-                      <a key={i} href={h.url} target="_blank" className="inline-block truncate max-w-xs text-xs text-indigo-400 hover:underline">
-                        {h.title || "External Highlight Link"}
+                    {highlightCards.slice(primaryHighlight ? 1 : 0).map((h) => {
+                      const href = httpsHref(h.url);
+                      if (!href) return null;
+                      return (
+                      <a key={h.url} href={href} target="_blank" rel="noopener noreferrer" className="inline-block truncate max-w-xs text-xs text-indigo-400 hover:underline">
+                        {h.title}
                       </a>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
+              ) : null}
 
               {/* Deep Analysis */}
               <div className="mt-8 space-y-6">
@@ -819,12 +668,13 @@ export default function Home() {
 
 
                   {/* Deep Analysis */}
-                  {apiData?.game_analysis?.deep_analysis && (
+                  {typeof apiData?.game_analysis?.deep_analysis === "string" &&
+                    apiData.game_analysis.deep_analysis && (
                     <div className="space-y-4">
                       <h3 className="text-lg font-medium text-white">Tactical Breakdown</h3>
                       <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/80 leading-relaxed markdown-content">
                         <ReactMarkdown>
-                            {cleanText(apiData.game_analysis.deep_analysis)}
+                            {apiData.game_analysis.deep_analysis}
                         </ReactMarkdown>
                       </div>
                     </div>

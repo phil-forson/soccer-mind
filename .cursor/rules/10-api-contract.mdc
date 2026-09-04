@@ -1,0 +1,46 @@
+---
+description: Typed FastAPI contract, SSE parsing, request IDs, and application-error mapping.
+globs: "{lib,hooks,app}/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# API contract
+
+Inspect `soccer-llm-analyst` (`API_DOCS.md`, `src/models.py`, `src/api.py`) before changing types or fetch logic. Keep FastAPI paths unchanged.
+
+## Types
+
+Define exact TypeScript domain types for `QueryRequest`, `QueryResponse`, `MatchMetadata`, `SourceCitation`, `HighlightVideo`, `ClaimEvidence`, and `GameAnalysisResponse`.
+
+- `QueryRequest`: `{ query: string; include_highlights?: boolean | null; emphasize_order?: boolean; gender?: "men" | "women" | "any" }`
+- `SourceCitation`: `{ id: string; url: string; title: string | null; domain: string | null }` — not a URL string
+- `ClaimEvidence`: `{ claim: string; evidence_chunk_ids: string[]; confidence: number; status: "supported" | "conflicting" | "insufficient" }`
+- `MatchMetadata` includes `home_team`, `away_team`, `match_date`, `score`, `competition`, `key_moments`, `man_of_the_match`, `match_summary`, `evidence_status`, `claim_evidence`, `no_match_found`
+- `evidence_status` includes `finished`, `scheduled`, `insufficient`, `conflicting`. Do not invent "Live" or "Full Time" from a score/date.
+- Never use `any` at the network boundary. External JSON starts as `unknown` and is narrowed/validated before use.
+
+## Transport
+
+- Main ask: `POST /query/stream` with `fetch` + `ReadableStream`. Do not use `EventSource`.
+- Resolve the base URL in one place (`lib/api/config.ts` when it exists). Strip a trailing slash. Do not hardcode hosts in call sites. Production must not silently fall back to localhost (see `30-quality-deployment.mdc`).
+- Send `Content-Type: application/json`. Preserve `request_id`. Support sending and reading `X-Request-ID`.
+- Use `AbortController`. Abort superseded requests and unmounts.
+- Never retry an expensive query (`/query`, `/query/stream`, `/analyze`) in a loop.
+- No OpenAI, YouTube, VPS, or backend secrets in frontend code.
+
+## SSE parser
+
+Buffer complete event blocks separated by blank lines. Normalize CRLF. Support `data:` lines. Ignore comments and keepalives. Stop on `[DONE]`.
+
+Handle:
+
+- stage messages (`stage`, `message`, `status`, optional `data`)
+- `type: "result"` with a `QueryResponse` payload
+- `type: "error"` for forward compatibility
+- current backend errors represented as `type: "result"` plus `success: false`
+
+The backend often rewrites internal `type: "error"` into a result payload before sending. Treat HTTP 200 + `success: false` as an application error.
+
+## Application errors
+
+Map at least: `query_not_relevant`, `no_match_found`, `rate_limited`, `openai_quota_exceeded`, `missing_query`, and unknown errors. `/analyze` may return a free-form `error` string.

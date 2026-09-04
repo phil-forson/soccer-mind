@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Soccer Mind
 
-## Getting Started
+Evidence-first football research UI for the Soccer LLM Analyst backend.
 
-First, run the development server:
+This Next.js app is a client. It does not invent scores, dates, competitions, or highlights, and it does not run a second analyst pipeline. Football facts come from the FastAPI backend: [soccer-llm-analyst](https://github.com/phil-forson/soccer-llm-analyst.git).
+
+## Backend dependency
+
+Clone and run [soccer-llm-analyst](https://github.com/phil-forson/soccer-llm-analyst.git). That repository's `API_DOCS.md`, `src/models.py`, and `src/api.py` are the API contract.
+
+Integration notes for this frontend: [docs/BACKEND_INTEGRATION.md](docs/BACKEND_INTEGRATION.md).
+
+Local API: `http://localhost:8000`  
+Production API: `https://YOUR_VPS_API_HOST` (Caddy → FastAPI on the VPS)
+
+The VPS backend must list this app's origin in `CORS_ORIGINS`.
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env.local
+```
+
+`.env.local` needs only the public API base URL:
+
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Start the backend in `soccer-llm-analyst`, then:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Next.js development server |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | ESLint |
+| `npm run test` | API contract regression tests |
 
-## Learn More
+## Production
 
-To learn more about Next.js, take a look at the following resources:
+Set `NEXT_PUBLIC_API_URL` to the HTTPS FastAPI host at build time, for example:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+NEXT_PUBLIC_API_URL=https://YOUR_VPS_API_HOST
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Do not fall back to localhost in a production browser. Do not put OpenAI, YouTube, or VPS credentials in this repository. `.env.example` is public frontend config only; never commit `.env.local`.

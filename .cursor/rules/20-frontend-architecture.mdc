@@ -1,0 +1,40 @@
+---
+description: Evidence-aware Next.js UI architecture, component boundaries, and accessibility.
+globs: "{app,components}/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# Frontend architecture
+
+Keep `app/page.tsx` small. Use the smallest practical Client Component boundary. Network and domain logic do not live inside JSX-heavy page components.
+
+Favor composition over giant prop/state components. Separate components by responsibility. Preserve the existing visual identity unless a task explicitly requests a redesign.
+
+## Preferred boundaries
+
+Create a file when it has a real responsibility. Do not create files merely to satisfy this tree.
+
+`components/soccer-analyst/`
+
+- `SoccerAnalystClient.tsx`, `QueryForm.tsx`, `ThinkingTimeline.tsx`, `ResultView.tsx`
+- `MatchCard.tsx`, `AnalysisPanel.tsx`, `SourceList.tsx`, `HighlightsSection.tsx`, `DeepAnalysis.tsx`
+
+`lib/api/` — `types.ts`, `client.ts`, `sse.ts`, `errors.ts`, `config.ts`
+
+`hooks/useSoccerQuery.ts` is appropriate for query lifecycle and state.
+
+## Rendering
+
+- Render according to `intent` and evidence state. Non-match intents (standings, fixtures, team news, transfer news, player info, statistics) must not be treated as failed match queries.
+- Show a score card only for valid verified or scheduled match metadata. Never invent "Today", "Full Time", "Final", or "Live".
+- Sources display `title` / `domain` / `url` from structured `sources[]` objects.
+- Hide the highlights section when `highlights[]` is empty.
+- Only allow HTTPS YouTube or YouTube-nocookie URLs in an iframe. Unsupported hosts render as normal external links. Iframes must have a `title`.
+- External links opened in a new tab use appropriate `rel` (`noopener noreferrer`).
+- Unknown team logos get a deterministic fallback (initials or placeholder), not a broken image.
+- Deep analysis is an explicit control after sufficient verified evidence. Do not auto-call `/analyze`.
+
+## Accessibility
+
+- Controls have accessible labels. Toggles use correct button or switch semantics.
+- Keyboard operation and visible focus states are required.

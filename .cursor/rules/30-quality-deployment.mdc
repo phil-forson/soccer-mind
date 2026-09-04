@@ -1,0 +1,41 @@
+---
+description: Regression tests, TypeScript strictness, and production API configuration.
+globs: "{**/*.{test,spec}.{ts,tsx},package.json,next.config.ts,tsconfig.json,.env.example,docs/**/*.md,README.md}"
+alwaysApply: false
+---
+
+# Quality and deployment
+
+## Tests
+
+Every API-contract fix has a regression test. Cover at least:
+
+- SSE chunks split at arbitrary byte boundaries
+- CRLF event separators
+- structured `sources[]` objects (not URL strings)
+- `success: false` application errors
+- `insufficient` and `conflicting` evidence
+- `no_match_found`
+- scheduled vs finished
+- empty `highlights[]`
+- non-match intents
+- abort behavior where practical
+
+`npm run lint`, tests, and `npm run build` must pass before declaring SHIP.
+
+Do not weaken TypeScript `strict` to make a build pass. Do not add `eslint-disable` or type assertions as a shortcut unless locally justified.
+
+## Production configuration
+
+One frontend API configuration boundary. Normalize the base URL and strip a trailing slash there.
+
+- Local development may default to `http://localhost:8000`.
+- Production must require `NEXT_PUBLIC_API_URL=https://YOUR_VPS_API_HOST`.
+- Do not silently fall back to localhost in a production browser.
+- Production API traffic must use HTTPS.
+
+Document `NEXT_PUBLIC_API_URL` and backend `CORS_ORIGINS`. The VPS backend must list the deployed frontend origin.
+
+Retain `request_id` / `X-Request-ID` for debugging.
+
+Do not commit secrets or `.env.local`. `.env.example` may contain only public frontend configuration.

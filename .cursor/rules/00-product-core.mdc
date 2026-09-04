@@ -1,0 +1,33 @@
+---
+description: Evidence-first product invariants for Soccer Mind. Backend is the only source of football truth.
+alwaysApply: true
+---
+
+# Soccer Mind — product core
+
+This Next.js app is a client for the Soccer LLM Analyst FastAPI backend (`soccer-llm-analyst`). It is not a generic chatbot and not a second analyst.
+
+The backend repository and its API docs are the source of truth. Do not invent API fields, football facts, or a parallel intelligence pipeline here.
+
+## Evidence
+
+- Never invent or infer a score, date, competition, match status, scorer, lineup, formation, statistic, xG, key moment, or highlight URL unless the backend returned it in the appropriate structured field.
+- Never display "Today", "Full Time", "Final", "Live", or another match state just because a score or date exists. Use `evidence_status` and actual API fields.
+- `insufficient` and `conflicting` evidence are valid UI states. Do not manufacture a result.
+- If `no_match_found` is true for a match-oriented query, render a useful no-match state.
+- A response without match metadata is not a failure. Standings, fixtures, team news, transfer news, player info, and statistics can legitimately have no match card.
+- Sources come exclusively from structured `sources[]` (`id`, `url`, `title`, `domain`). Never regex URLs out of `summary`.
+- Empty `highlights[]` is a valid successful outcome. Hide the highlights section when there are none.
+
+## Analysis and scope
+
+- `/query` and `/query/stream` do not run deep game analysis. `POST /analyze` is opt-in and must be explicitly user-triggered after a match result has sufficient verified evidence.
+- Do not add auth, betting, odds, gambling UX, a fake live ticker, FPL features, a vector database, a scraper, or a second analyst pipeline.
+- Do not introduce a Next.js API proxy/BFF unless a later task requests it.
+- Never put `OPENAI_API_KEY`, `YOUTUBE_API_KEY`, VPS/SSH/Hetzner credentials, or backend `.env` contents in browser code.
+
+## Change discipline
+
+- Make the smallest coherent change that satisfies the task.
+- Do not do unrelated refactors.
+- Do not guess API fields when `soccer-llm-analyst` docs or source answer the question.
