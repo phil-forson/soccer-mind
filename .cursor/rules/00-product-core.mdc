@@ -22,7 +22,8 @@ The backend repository and its API docs are the source of truth. Do not invent A
 ## Analysis and scope
 
 - `/query` and `/query/stream` do not run deep game analysis. `POST /analyze` is opt-in and must be explicitly user-triggered after a match result has sufficient verified evidence.
-- Do not add auth, betting, odds, gambling UX, a fake live ticker, FPL features, a vector database, a scraper, or a second analyst pipeline.
+- FPL rankings are an allowed side feature via `GET /fpl/rankings` only. Render them as **predictions**, never as verified match facts. Do not compute FPL edge, xPts, or ranks in Next.js.
+- Do not add auth, betting, odds, gambling UX, a fake live ticker, a vector database, a scraper, or a second match-analyst pipeline.
 - Do not introduce a Next.js API proxy/BFF unless a later task requests it.
 - Never put `OPENAI_API_KEY`, `YOUTUBE_API_KEY`, VPS/SSH/Hetzner credentials, or backend `.env` contents in browser code.
 

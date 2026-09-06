@@ -22,6 +22,7 @@ Define exact TypeScript domain types for `QueryRequest`, `QueryResponse`, `Match
 ## Transport
 
 - Main ask: `POST /query/stream` with `fetch` + `ReadableStream`. Do not use `EventSource`.
+- FPL side feature: `GET /fpl/rankings`. Do not invent ranks in the client.
 - Resolve the base URL in one place (`lib/api/config.ts` when it exists). Strip a trailing slash. Do not hardcode hosts in call sites. Production must not silently fall back to localhost (see `30-quality-deployment.mdc`).
 - Send `Content-Type: application/json`. Preserve `request_id`. Support sending and reading `X-Request-ID`.
 - Use `AbortController`. Abort superseded requests and unmounts.

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import { FplRankings } from "@/components/soccer-analyst/FplRankings";
 import { useSoccerQuery } from "@/hooks/useSoccerQuery";
 import type { HighlightVideo, MatchMetadata, SourceCitation } from "@/lib/api/types";
 import { isMatchOrientedIntent, shouldShowScoreCard } from "@/lib/api/types";
@@ -420,8 +421,7 @@ export default function Home() {
             <p className="mt-3 text-center text-[10px] text-white/30">
               AI may make mistakes. Please verify important information.
             </p>
-
-            {/* Compact Thinking Stream under Prompt - REMOVED since moving to Hero */}
+            <FplRankings />
           </div>
         </div>
 

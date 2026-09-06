@@ -90,6 +90,10 @@ Use `fetch` + `ReadableStream` (not `EventSource`). The stream emits thinking st
 
 Application errors are often HTTP 200 with `type: "result"` and `success: false`. Map `query_not_relevant`, `no_match_found`, `rate_limited`, `openai_quota_exceeded`, `missing_query`, and unknown codes.
 
+### `GET /fpl/rankings`
+
+Optional FPL side feature. Predicted player ranking from the backend edge engine. Query params: `gameweek`, `limit`, `strategy`. Render as predictions only. Authoritative details: `soccer-llm-analyst/API_DOCS.md`.
+
 ### `POST /analyze`
 
 Opt-in deep analysis. Same request body as `/query`. Call it only after the user asks and a match result has sufficient verified evidence. Treat the analysis as interpretation, not extra verified facts.
